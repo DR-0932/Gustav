@@ -1,0 +1,595 @@
+import { Elysia, sse, t } from "elysia";
+import { cors } from "@elysiajs/cors";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { db, message, project, snapshot } from "@repo/db";
+import { PROVIDERS, PROVIDER_IDS, isProviderId, serverProvider } from "./agent/LLM_Providers";
+import { clearKey, hasKey, keyInfo, providerForUser, setKey, validateKey } from "./persistence/byok";
+import { AgentSession, type AgentEvent } from "./agent/agent";
+import { closeLive, closeOtherLives, getLive, getSession, guestSlotAvailable, publish, startLive, subscribe, unsubscribe, type StreamEvent } from "./liveSessions";
+import { acquireDeployment } from "./deploy/operation";
+import { deployProject } from "./deploy/deployProject";
+import { vercelFromEnv } from "./deploy/vercel";
+import { idSuffix, isValidSlug, suggestSlug, vercelProjectName } from "./deploy/naming";
+import { releaseVercelProject, reserveVercelProject } from "./deploy/reserve";
+import { loadContext, messagePersister, rewindProject, snapshotLoader } from "./persistence/store";
+import { snapshotEnqueuer, startSnapshotWorker } from "./persistence/snapshotQueue";
+import { checkAccess, getAccessView, stepBudget, TRIAL_DAYS, TRIAL_STEPS } from "./persistence/access";
+import { sweepOrphanSandboxes } from "./sandbox/sweep";
+import { auth, githubEnabled, WEB_ORIGIN } from "./auth";
+import { acceptInvite, InviteError, peekInvite } from "./admin/invites";
+import { createGuestLink, listGuestLinks, redeemGuestLink, revokeGuestLink } from "./admin/guests";
+import { createInviteLink } from "./admin/invites";
+import { isAdminEmail, usageOverview } from "./admin/usage";
+import { health } from "./health";
+import { trialRoutes } from "./admin/trialRoutes";
+
+const PORT = 4000;
+
+// Resolve the signed-in user from the request's cookies (Better Auth session) and check
+// their access hasn't expired (7a) — on every request, not only at sign-in, so an expired
+// guest's open tab stops working. 401 = not signed in; 403 = signed in, access over.
+type Authorized = { ok: true; userId: string; limited: boolean } | { ok: false; status: 401 | 403; error: "unauthorized" | "access_expired" | "no_access" };
+
+async function authorize(request: Request): Promise<Authorized> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, status: 401, error: "unauthorized" };
+  const access = await checkAccess(userId);
+  if (!access.ok) return { ok: false, status: 403, error: access.reason === "expired" ? "access_expired" : "no_access" };
+  return { ok: true, userId, limited: access.limited };
+}
+
+// Admin routes are gated on the session's email being in ADMIN_EMAILS — checked server-side
+// on every one of them, never by hiding a button. Being on the allowlist is not enough: it
+// buys unlimited building, not the ability to mint access for others. Destructive work
+// (prune) stays a CLI: irreversible things don't get an internet-facing button.
+async function requireAdmin(request: Request): Promise<{ ok: true } | { ok: false; status: 401 | 403 }> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user?.id) return { ok: false, status: 401 };
+  return isAdminEmail(session.user.email) ? { ok: true } : { ok: false, status: 403 };
+}
+
+async function ownsProject(userId: string, projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: project.id })
+    .from(project)
+    .where(and(eq(project.id, projectId), eq(project.userId, userId)))
+    .limit(1);
+  return !!row;
+}
+
+// Live sessions (one per project, outliving individual streams) live in liveSessions.ts.
+
+// Bridge push→pull: AgentSession pushes events via its onEvent callback, but an
+// Elysia SSE handler pulls by `yield`ing. This queue buffers pushes and lets the
+// generator await the next one. `finish()` ends the async iteration.
+function createEventQueue<T>() {
+  const buffer: T[] = [];
+  let wake: (() => void) | null = null;
+  let done = false;
+  return {
+    push(item: T) {
+      buffer.push(item);
+      wake?.();
+      wake = null;
+    },
+    finish() {
+      done = true;
+      wake?.();
+      wake = null;
+    },
+    async *drain(): AsyncGenerator<T> {
+      while (true) {
+        if (buffer.length) {
+          yield buffer.shift()!;
+          continue;
+        }
+        if (done) return;
+        await new Promise<void>((r) => (wake = r));
+      }
+    },
+  };
+}
+
+export const app = new Elysia()
+  // credentials + explicit origin so the browser sends/accepts auth cookies cross-origin
+  .use(cors({ origin: WEB_ORIGIN, credentials: true }))
+  // Better Auth routes (sign-up/in/out, session) mount at /api/auth/*
+  .mount(auth.handler)
+  // The signed-in user's access (tier, steps left, expiry). Deliberately NOT behind the
+  // expiry check — an expired account still needs to learn that it expired.
+  // What the sign-in screen needs to know before anyone is signed in.
+  .get("/config", () => ({
+    github: githubEnabled,
+    trial: { days: TRIAL_DAYS, steps: TRIAL_STEPS },
+    // Providers a BYOK visitor can choose, with suggested models (fast tier first).
+    providers: PROVIDER_IDS.map((id) => ({ id, label: PROVIDERS[id].label, models: PROVIDERS[id].models })),
+  }))
+  // The status page's deep check (Postgres + Redis); 503 with the failing check when degraded.
+  .get("/health", async ({ set }) => {
+    const { ok, body } = await health();
+    set.status = ok ? 200 : 503;
+    return body;
+  })
+  // One-time email links (7b): look one up, then use it. Unauthenticated by nature — the
+  // token IS the credential, so an unknown/used/expired one is a flat 404 either way.
+  .get("/invite/:token", async ({ params, set }) => {
+    const link = await peekInvite(params.token);
+    if (!link) { set.status = 404; return { error: "invalid_link" }; }
+    return link;
+  })
+  .post(
+    "/invite/:token",
+    async ({ params, body, set }) => {
+      try {
+        return await acceptInvite(params.token, body.password);
+      } catch (e) {
+        set.status = e instanceof InviteError ? 400 : 500;
+        return { error: e instanceof InviteError ? e.message : "Could not use this link." };
+      }
+    },
+    { body: t.Object({ password: t.String({ minLength: 1 }) }) },
+  )
+  // Guest link (7c): hand back the URL that signs this browser into the link's account.
+  // Reusable — any device, any number of opens, all sharing that account's step budget.
+  .post("/g/:token", async ({ params, set }) => {
+    const redeemed = await redeemGuestLink(params.token);
+    if (!redeemed) { set.status = 404; return { error: "invalid_link" }; }
+    return redeemed;
+  })
+  // Store a BYOK visitor's key for this server's lifetime (7f), after proving it works.
+  // Deliberately no logging in here: the body carries a live credential.
+  .post(
+    "/byok",
+    async ({ request, body, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      if (!isProviderId(body.provider)) { set.status = 400; return { error: "unknown_provider" }; }
+      const key = { provider: body.provider, apiKey: body.apiKey.trim(), model: body.model?.trim() || undefined };
+      const checked = await validateKey(key);
+      if (!checked.ok) { set.status = 400; return { error: checked.message }; }
+      setKey(who.userId, key);
+      return { ok: true, provider: key.provider, model: key.model ?? null };
+    },
+    { body: t.Object({ provider: t.String(), apiKey: t.String({ minLength: 8 }), model: t.Optional(t.String()) }) },
+  )
+  .delete("/byok", async ({ request, set }) => {
+    const who = await authorize(request);
+    if (!who.ok) { set.status = who.status; return { error: who.error }; }
+    clearKey(who.userId);
+    return { ok: true };
+  })
+  // ── Admin (7g): guest links, invite links, usage. Same module the CLIs call.
+  .get("/admin/overview", async ({ request, set }) => {
+    const who = await requireAdmin(request);
+    if (!who.ok) { set.status = who.status; return { error: "forbidden" }; }
+    return { guests: await listGuestLinks(), usage: await usageOverview() };
+  })
+  .use(trialRoutes({
+    getUserId: async request => (await auth.api.getSession({ headers: request.headers }))?.user?.id ?? null,
+    requireAdmin,
+  }))
+  .post(
+    "/admin/guest-links",
+    async ({ request, body, set }) => {
+      const who = await requireAdmin(request);
+      if (!who.ok) { set.status = who.status; return { error: "forbidden" }; }
+      return createGuestLink({ label: body.label, steps: body.steps, days: body.days });
+    },
+    { body: t.Object({ label: t.Optional(t.String()), steps: t.Optional(t.Number()), days: t.Optional(t.Number()) }) },
+  )
+  .post("/admin/guest-links/:id/revoke", async ({ request, params, set }) => {
+    const who = await requireAdmin(request);
+    if (!who.ok) { set.status = who.status; return { error: "forbidden" }; }
+    const revoked = await revokeGuestLink(params.id);
+    if (!revoked) { set.status = 404; return { error: "not_found" }; }
+    return { ok: true };
+  })
+  .post(
+    "/admin/invite-links",
+    async ({ request, body, set }) => {
+      const who = await requireAdmin(request);
+      if (!who.ok) { set.status = who.status; return { error: "forbidden" }; }
+      try {
+        return await createInviteLink(body.email, body.kind ?? "invite");
+      } catch (e) {
+        set.status = 400;
+        return { error: e instanceof Error ? e.message : "Could not create that link." };
+      }
+    },
+    { body: t.Object({ email: t.String({ minLength: 3 }), kind: t.Optional(t.Union([t.Literal("invite"), t.Literal("reset")])) }) },
+  )
+  .get("/me", async ({ request, set }) => {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user?.id) { set.status = 401; return { error: "unauthorized" }; }
+    const access = await getAccessView(session.user.id);
+    return {
+      email: session.user.email,
+      isAdmin: isAdminEmail(session.user.email),
+      access,
+      // BYOK visitors bring their own key; it lives in memory only, so the page has to ask
+      // again after a restart. `key` never leaves the server — only which provider it is.
+      byok: access?.tier === "byok" ? { needsKey: !hasKey(session.user.id), key: keyInfo(session.user.id), providers: PROVIDER_IDS } : null,
+    };
+  })
+  // Create a project (owned by the signed-in user).
+  .post(
+    "/projects",
+    async ({ request, body, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const userId = who.userId;
+      const [row] = await db.insert(project).values({ userId, name: body.name }).returning();
+      return row;
+    },
+    { body: t.Object({ name: t.String({ minLength: 1 }) }) },
+  )
+  // List the signed-in user's projects, newest first.
+  .get("/projects", async ({ request, set }) => {
+    const who = await authorize(request);
+    if (!who.ok) { set.status = who.status; return { error: who.error }; }
+    const userId = who.userId;
+    return db.select().from(project).where(eq(project.userId, userId)).orderBy(desc(project.updatedAt));
+  })
+  // Persisted conversation for a project, ordered — lets the UI replay the transcript on
+  // reopen (agent memory is already restored server-side; this is the visual history).
+  .get(
+    "/projects/:id/messages",
+    async ({ params, request, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const userId = who.userId;
+      const [proj] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.id, params.id), eq(project.userId, userId)))
+        .limit(1);
+      if (!proj) {
+        set.status = 404;
+        return { error: "project_not_found" };
+      }
+      return db
+        // createdAt lets the replayed transcript show the same timestamps as the live one.
+        .select({ seq: message.seq, role: message.role, content: message.content, createdAt: message.createdAt })
+        .from(message)
+        .where(eq(message.projectId, params.id))
+        .orderBy(asc(message.seq));
+    },
+  )
+  // Rewind points for a project — each pushed snapshot, oldest first.
+  .get(
+    "/projects/:id/snapshots",
+    async ({ params, request, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const userId = who.userId;
+      const [proj] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.id, params.id), eq(project.userId, userId)))
+        .limit(1);
+      if (!proj) { set.status = 404; return { error: "project_not_found" }; }
+      return db
+        .select({ id: snapshot.id, commitHash: snapshot.commitHash, n: snapshot.n, createdAt: snapshot.createdAt })
+        .from(snapshot)
+        .where(eq(snapshot.projectId, params.id))
+        .orderBy(asc(snapshot.n));
+    },
+  )
+  // Rewind a project to a chosen snapshot: point it at that snapshot's bundle, discard
+  // the conversation and snapshots past it (the abandoned branch), so the next reopen
+  // restores that codebase + the clamped context. The client reopens afterwards.
+  .post(
+    "/projects/:id/rewind",
+    async ({ params, body, request, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const userId = who.userId;
+      const [proj] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(and(eq(project.id, params.id), eq(project.userId, userId)))
+        .limit(1);
+      if (!proj) { set.status = 404; return { error: "project_not_found" }; }
+      const [snap] = await db
+        .select()
+        .from(snapshot)
+        .where(and(eq(snapshot.id, body.snapshotId), eq(snapshot.projectId, params.id)))
+        .limit(1);
+      if (!snap) { set.status = 404; return { error: "snapshot_not_found" }; }
+
+      // Sessions now outlive their stream, so a live one would still hold the pre-rewind
+      // code and history — close it first; the page's reopen then starts a fresh one.
+      await closeLive(params.id, "rewind");
+      await rewindProject(params.id, snap.n);
+      return { ok: true, n: snap.n };
+    },
+    { body: t.Object({ snapshotId: t.String() }) },
+  )
+  // Deploy the project's app to Vercel (spec 12). Allowlist only for now: an unclaimed app
+  // lives on Orin's own Vercel account, so a guest's build would be hosted under its name.
+  // Needs the open builder (the source is read from the live sandbox) and no turn mid-way
+  // (HEAD is only a finished round between turns). Answers at once — the build takes
+  // 30–60s, and its progress and outcome arrive as deploy_* events on the stream.
+  // What the publish dialog needs. Before the first deploy: an example name for the field's
+  // placeholder (from the app's <title>) and the fixed id suffix the link will carry. After:
+  // the stored link, which no longer changes. `canDeploy` is the server's answer, so the page never guesses at tiers.
+  .get("/projects/:id/deploy", async ({ params, request, set }) => {
+    const who = await authorize(request);
+    if (!who.ok) { set.status = who.status; return { error: who.error }; }
+    const [proj] = await db
+      .select({ id: project.id, name: project.name, vercelProject: project.vercelProject, deployUrl: project.deployUrl, deployedCommit: project.deployedCommit, deployedAt: project.deployedAt })
+      .from(project)
+      .where(and(eq(project.id, params.id), eq(project.userId, who.userId)))
+      .limit(1);
+    if (!proj) { set.status = 404; return { error: "project_not_found" }; }
+    const canDeploy = !who.limited && vercelFromEnv() !== null;
+    const unavailableReason = who.limited ? "deploy_not_allowed" : canDeploy ? null : "deploy_unconfigured";
+    const stored = { vercelProject: proj.vercelProject, deployUrl: proj.deployUrl, deployedCommit: proj.deployedCommit, deployedAt: proj.deployedAt, unavailableReason };
+    if (proj.vercelProject || !canDeploy) return { ...stored, canDeploy };
+    const html = (await getLive(params.id)?.session?.readIndexHtml()) ?? null;
+    return { ...stored, canDeploy, example: suggestSlug(html, proj.name), suffix: idSuffix(proj.id) };
+  })
+  .post("/projects/:id/deploy", async ({ params, body, request, set }) => {
+    const who = await authorize(request);
+    if (!who.ok) { set.status = who.status; return { error: who.error }; }
+    if (who.limited) { set.status = 403; return { error: "deploy_not_allowed" }; }
+    const release = acquireDeployment(params.id);
+    if (!release) { set.status = 409; return { error: "deploy_in_progress" }; }
+    let handedOff = false;
+    try {
+      const vercel = vercelFromEnv();
+      if (!vercel) { set.status = 503; return { error: "deploy_unconfigured" }; }
+      const [proj] = await db
+        .select({ id: project.id, name: project.name, vercelProject: project.vercelProject })
+        .from(project)
+        .where(and(eq(project.id, params.id), eq(project.userId, who.userId)))
+        .limit(1);
+      if (!proj) { set.status = 404; return { error: "project_not_found" }; }
+      // The first deploy needs a name the user typed in the publish dialog — never a guess they
+      // didn't see. It's a strict slug, so it can't carry anything but [a-z0-9-] into the Vercel
+      // request or the database. After the first deploy it's ignored: the link doesn't move.
+      const slug = body?.name;
+      if (!proj.vercelProject) {
+        if (slug === undefined) { set.status = 400; return { error: "name_required" }; }
+        if (!isValidSlug(slug)) { set.status = 400; return { error: "invalid_name" }; }
+      }
+      const live = getLive(params.id);
+      const session = live?.session;
+      if (!live || !session) { set.status = 409; return { error: "not_running" }; }
+      if (live.runActive) { set.status = 409; return { error: "run_active" }; }
+      if (live.deploying) { set.status = 409; return { error: "deploy_in_progress" }; }
+      live.deploying = true; // set before any await, so a double click can't start two
+
+      // First deploy: claim the name in Postgres (atomic, see reserve.ts), then make sure the
+      // Vercel team doesn't already have a project by it that isn't an Orin app.
+      let vercelProject = proj.vercelProject;
+      if (!vercelProject) {
+        const name = vercelProjectName(proj.id, slug!);
+        try {
+          if ((await reserveVercelProject(proj.id, name)) === "taken") {
+            live.deploying = false;
+            set.status = 409;
+            return { error: "name_taken" };
+          }
+          if (await vercel.projectExists(name)) {
+            await releaseVercelProject(proj.id, name);
+            live.deploying = false;
+            set.status = 409;
+            return { error: "name_taken" };
+          }
+        } catch (e) {
+          live.deploying = false;
+          throw e;
+        }
+        vercelProject = name;
+      }
+
+      handedOff = true;
+      void deployProject({
+        projectId: params.id,
+        vercelProject,
+        exportSource: () => session.exportSource(),
+        client: vercel,
+        emit: (event, data) => publish(live, event, data),
+        save: async (r) => {
+          await db.update(project)
+            .set({ deployUrl: r.url, deployedCommit: r.commit, deployedAt: new Date() }) // the name was reserved before deploying
+            .where(eq(project.id, params.id));
+        },
+      }).finally(() => { live.deploying = false; release(); });
+      set.status = 202;
+      return { ok: true };
+    } finally { if (!handedOff) release(); }
+  }, { body: t.Optional(t.Object({ name: t.Optional(t.String()) })) })
+  .delete("/projects/:id/deploy", async ({ params, request, set }) => {
+    const who = await authorize(request);
+    if (!who.ok) { set.status = who.status; return { error: who.error }; }
+    if (who.limited) { set.status = 403; return { error: "deploy_not_allowed" }; }
+    const release = acquireDeployment(params.id);
+    if (!release) { set.status = 409; return { error: "deploy_in_progress" }; }
+    try {
+      const [proj] = await db.select().from(project)
+        .where(and(eq(project.id, params.id), eq(project.userId, who.userId))).limit(1);
+      if (!proj) { set.status = 404; return { error: "project_not_found" }; }
+      if (!proj.vercelProject) return { ok: true };
+      const vercel = vercelFromEnv();
+      if (!vercel) { set.status = 503; return { error: "deploy_unconfigured" }; }
+      await vercel.unpublish(proj.vercelProject, proj.id);
+      // Clear only after remote deletion succeeds. A failed DB write is retryable:
+      // the remote 404 is treated as already unpublished.
+      await db.update(project).set({ vercelProject: null, deployUrl: null, deployedCommit: null, deployedAt: null })
+        .where(eq(project.id, proj.id));
+      const live = getLive(proj.id);
+      if (live) publish(live, "deploy_unpublished");
+      return { ok: true };
+    } catch (e) {
+      console.error("unpublish_failed", String(e));
+      set.status = 502;
+      return { error: "unpublish_failed" };
+    } finally { release(); }
+  })
+  .get(
+    "/agent/stream",
+    async function* ({ query, request }) {
+      // Auth + ownership before streaming (EventSource can't send headers, so this
+      // rides on the session cookie). On failure, emit one event and end the stream.
+      const who = await authorize(request);
+      if (!who.ok) {
+        yield sse({ data: { event: who.error } });
+        return;
+      }
+      const userId = who.userId;
+      const [proj] = await db
+        .select()
+        .from(project)
+        .where(and(eq(project.id, query.projectId), eq(project.userId, userId)))
+        .limit(1);
+      if (!proj) {
+        yield sse({ data: { event: "project_not_found" } });
+        return;
+      }
+      // Attach to the project's live session, or start one. The session is owned by the
+      // server (liveSessions.ts); this stream is only a subscriber to it.
+      const projectId = query.projectId;
+      // BYOK visitors build with their own key, held in memory only (7f). No key, no session.
+      const byokProvider = proj.userId === userId && who.limited ? providerForUser(userId) : null;
+      const needsOwnKey = (await getAccessView(userId))?.tier === "byok";
+      if (needsOwnKey && !byokProvider) {
+        yield sse({ data: { event: "byok_key_required" } });
+        return;
+      }
+      // A limited account keeps one live session: opening this project closes the others.
+      // No await between this and startLive, so racing tabs can't both keep one.
+      if (who.limited) closeOtherLives(userId, projectId);
+      // Sandboxes are the cost of a free trial — limited accounts share a global ceiling.
+      if (who.limited && !guestSlotAvailable(projectId)) {
+        yield sse({ data: { event: "busy" } });
+        return;
+      }
+      const live = getLive(projectId) ?? startLive(projectId, userId, who.limited, async (onEvent: (e: AgentEvent) => void) => {
+        // Resume: load any prior conversation to seed the session (empty for a new project).
+        const initialContext = await loadContext(projectId);
+        const [{ rewindGen }] = await db.select({ rewindGen: project.rewindGen }).from(project).where(eq(project.id, projectId));
+        const provider = byokProvider ?? serverProvider("low");
+        const session = await AgentSession.create(provider, {
+          onEvent,
+          persist: messagePersister(projectId),
+          enqueueSnapshot: snapshotEnqueuer(projectId, userId, rewindGen, who.limited ? "guests" : "users"),
+          restoreSnapshot: snapshotLoader(projectId),
+          stepBudget: stepBudget(userId),
+          initialContext,
+        });
+        return {
+          session,
+          afterReady: async () => {
+            // Start the dev server in parallel with the first build so the preview is
+            // live *while* the agent edits (Vite HMR shows progress), not only after.
+            const preview = session.startPreview(); // broadcasts preview_ready
+            // `prompt` is only the *first* build of a brand-new project — never re-run for
+            // a project that already has a conversation (a reconnect may carry it again).
+            if (query.prompt && initialContext.length === 0) await session.submit(query.prompt);
+            await preview.catch(() => { }); // settle/surface any preview startup error
+          },
+        };
+      });
+
+      const queue = createEventQueue<StreamEvent>();
+      const sub = { push: (e: StreamEvent) => queue.push(e), end: () => queue.finish() };
+      const after = query.after !== undefined ? Number(query.after) : undefined;
+      const { replay, resumed } = subscribe(live, sub, Number.isFinite(after) ? after : undefined);
+
+      // Heartbeat so idle proxies don't drop the connection after preview_ready.
+      const heartbeat = setInterval(
+        () => queue.push({ ts: new Date().toISOString(), sessionId: "", event: "ping" }),
+        15_000,
+      );
+
+      let closeReason = "client_gone";
+      try {
+        // First, tell the page whether it rejoined a running session (keep its state) or
+        // got a new one (the old one expired — reset). Then what it missed, then live.
+        yield sse({ data: { ts: new Date().toISOString(), sessionId: live.session?.id ?? "", event: "attached", resumed } });
+        for (const e of replay) yield sse({ id: e.id, data: e });
+        for await (const event of queue.drain()) {
+          // Default (unnamed) SSE messages so the browser's single `onmessage` catches all
+          // of them — the type lives in the payload. `id` enables resume on reconnect.
+          yield sse(event.id !== undefined ? { id: event.id, data: event } : { data: event });
+        }
+      } catch (e) {
+        closeReason = `error: ${String(e)}`;
+        throw e;
+      } finally {
+        // The page went away (or the stream failed). Detach only — the session keeps
+        // running, and is closed after a grace period if nobody reattaches.
+        clearInterval(heartbeat);
+        queue.finish();
+        unsubscribe(live, sub);
+        // Diagnostic: dropped streams have killed builds before and the cause is still
+        // unknown, so every close says why and how many viewers remain.
+        console.log(JSON.stringify({ ts: new Date().toISOString(), event: "stream_closed", projectId, reason: closeReason, remaining: live.subscribers.size }));
+      }
+    },
+    {
+      query: t.Object({
+        projectId: t.String(),
+        prompt: t.Optional(t.String({ minLength: 1 })),
+        // Last event id the page saw — resume from just after it.
+        after: t.Optional(t.String()),
+      }),
+    },
+  )
+  // Follow-up prompt for an existing session. Fire-and-forget: submit() queues it
+  // (applied at the next turn boundary) and its events flow down that session's
+  // already-open SSE stream — so nothing is returned here but an ack.
+  .post(
+    "/agent/:sessionId/message",
+    async ({ params, body, request, set }) => {
+      // Signed in, not expired, and the session's project is theirs — a session id alone
+      // (it travels in every SSE event and log line) must not be enough to spend steps.
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const entry = getSession(params.sessionId);
+      if (!entry || !(await ownsProject(who.userId, entry.projectId))) {
+        set.status = 404;
+        return { error: "session not found" };
+      }
+      const { session } = entry;
+      session.submit(body.prompt); // not awaited — events surface on the SSE stream
+      return { ok: true };
+    },
+    {
+      body: t.Object({ prompt: t.String({ minLength: 1 }) }),
+    },
+  )
+  // Answer to an ask_user question. Resolves the parked tool call → the loop
+  // resumes with the answer as the tool result → progress flows down the SSE stream.
+  .post(
+    "/agent/:sessionId/answer",
+    async ({ params, body, request, set }) => {
+      const who = await authorize(request);
+      if (!who.ok) { set.status = who.status; return { error: who.error }; }
+      const entry = getSession(params.sessionId);
+      if (!entry || !(await ownsProject(who.userId, entry.projectId))) {
+        set.status = 404;
+        return { error: "session not found" };
+      }
+      const ok = entry.session.answer(body.callId, body.answer);
+      if (!ok) {
+        set.status = 409;
+        return { error: "no pending question for that callId" };
+      }
+      return { ok: true };
+    },
+    {
+      body: t.Object({ callId: t.String(), answer: t.String() }),
+    },
+  )
+  .listen(PORT);
+
+// Drain codebase-snapshot jobs to R2 in the background, off the agent's hot path (M5b).
+startSnapshotWorker();
+// Kill sandboxes a crashed predecessor left running (fire-and-forget; never blocks boot).
+void sweepOrphanSandboxes();
+
+console.log(`agent SSE server → http://localhost:${PORT}/agent/stream?prompt=...`);
