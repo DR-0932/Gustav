@@ -1,29 +1,29 @@
 {
-  "name": "my-app",
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "docker compose up -d --wait && turbo run dev --filter=api --filter=@repo/web",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "test": "docker compose up -d --wait && turbo run test"
   },
   "devDependencies": {
-    "prettier": "3.9.6",
-    "turbo": "^2.11.11",
-    "typescript": "7.0.2"
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "turbo": "^2.10.10"
   },
-  "engines": {
-    "node": ">=24"
-  },
+  "name": "with-vite",
   "devEngines": {
     "packageManager": {
       "name": "bun",
-      "version": "1.3.11"
+      "version": "1.3.14"
     }
   },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "zod": "^4.5.2"
+  }
 }
