@@ -6,7 +6,7 @@ import { accountAccess, db, message, project, snapshot, user } from "./index.js"
 // (7d prune is a single DELETE) — before 0008 it failed on the project FK instead.
 test("deleting a user cascades to access, projects, messages and snapshots", async () => {
   const id = `test-cascade-${crypto.randomUUID()}`;
-  await db.insert(user).values({ id, name: "cascade", email: `${id}@orin.test` });
+  await db.insert(user).values({ id, name: "cascade", email: `${id}@Gustav.test` });
   await db.insert(accountAccess).values({ userId: id, tier: "guest", stepsLimit: 60 });
   const [p] = await db.insert(project).values({ userId: id, name: "cascade" }).returning();
   await db.insert(message).values({ projectId: p.id, seq: 0, role: "user", content: "hi" });
