@@ -1,4 +1,4 @@
-# Orin
+# Gustav
 
 Gustav is a Lovable-style AI app builder,you
 describe an app in plain language, and an agent scaffolds and builds it live inside an isolated cloud
@@ -43,14 +43,14 @@ Set the API keys (Bun auto-loads `.env` from each app's own directory):
 DEEPSEEK_API_KEY=...
 E2B_API_KEY=...
 
-# apps/orin-react-workspace/.env
+# apps/Gustav-react-workspace/.env
 E2B_API_KEY=...
 ```
 
 Build the sandbox template once (produces the image the agent boots from):
 
 ```sh
-cd apps/orin-react-workspace && bun run e2b:build:dev
+cd apps/Gustav-react-workspace && bun run e2b:build:dev
 ```
 
 ### Run it
