@@ -2,7 +2,7 @@
 //   bun run prune-guests                      → what would go
 //   bun run prune-guests --older-than 30d
 //   bun run prune-guests --yes                → actually delete
-// Allowlist accounts are never candidates. Deployed: `kubectl exec -n orin-app deploy/api -- …`.
+// Allowlist accounts are never candidates. Deployed: `kubectl exec -n Gustav-app deploy/api -- …`.
 // Also run by the prune-guests CronJob; importing this CLI never starts the API or E2B sweep.
 import { findPruneCandidates, parseAge, prune, PRUNE_RETENTION } from "../src/admin/prune";
 

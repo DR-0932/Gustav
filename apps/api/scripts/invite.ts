@@ -1,7 +1,7 @@
 // Print a one-time link for an email account (7b):
 //   bun run invite <email>            → first password (also allowlists the address)
 //   bun run invite <email> --reset    → replace a forgotten password
-// Deployed: `kubectl exec deploy/orin-api -- bun run invite <email>`.
+// Deployed: `kubectl exec deploy/Gustav-api -- bun run invite <email>`.
 import { createInviteLink } from "../src/admin/invites";
 
 const args = process.argv.slice(2);
