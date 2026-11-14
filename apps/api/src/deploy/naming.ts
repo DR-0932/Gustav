@@ -1,4 +1,4 @@
-// What a deployed app's link is called. One Vercel project per Orin project, and its name is
+// What a deployed app's link is called. One Vercel project per Gustav project, and its name is
 // the link people see: https://<slug>-<4 id chars>.vercel.app. The id suffix keeps two
 // "Todo app"s apart; the slug is chosen once, at the first deploy, and stored — so a redeploy
 // keeps the link, and nothing renamed later can move one that's been shared.

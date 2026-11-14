@@ -21,7 +21,7 @@ export async function deployProject(s: DeploySeams): Promise<DeployResult | null
   try {
     const source = await s.exportSource();
     const refs = await s.client.uploadFiles(source.files);
-    const created = await s.client.createDeployment(s.vercelProject, refs, { orinProjectId: s.projectId, commit: source.commit });
+    const created = await s.client.createDeployment(s.vercelProject, refs, { GustavProjectId: s.projectId, commit: source.commit });
     s.emit("deploy_building", { deploymentId: created.id, files: refs.length });
     const done = await s.client.waitReady(created.id);
     if (done.readyState !== "READY") {

@@ -13,12 +13,12 @@ function fixture(responses: [number, unknown][]) {
 }
 
 test("deletes only the verified immutable Vercel project ID", async () => {
-  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { orinProjectId: "ours" } }] }], [204, null]]);
+  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { GustavProjectId: "ours" } }] }], [204, null]]);
   await f.client.unpublish("coffee-abcd", "ours");
   expect(f.calls.at(-1)).toEqual({ method: "DELETE", url: "https://api.vercel.com/v9/projects/prj_123?teamId=team-test" });
 });
-test("refuses deletion when metadata belongs to another Orin project", async () => {
-  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { orinProjectId: "other" } }] }]]);
+test("refuses deletion when metadata belongs to another Gustav project", async () => {
+  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { GustavProjectId: "other" } }] }]]);
   await expect(f.client.unpublish("coffee-abcd", "ours")).rejects.toThrow("ownership");
   expect(f.calls.some(c => c.method === "DELETE")).toBe(false);
 });
@@ -28,7 +28,7 @@ test("an already deleted project can be retried", async () => {
   expect(f.calls).toHaveLength(1);
 });
 test("provider failures propagate instead of clearing deployment state", async () => {
-  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { orinProjectId: "ours" } }] }], [403, { error: { message: "Forbidden" } }]]);
+  const f = fixture([[200, { id: "prj_123" }], [200, { deployments: [{ meta: { GustavProjectId: "ours" } }] }], [403, { error: { message: "Forbidden" } }]]);
   await expect(f.client.unpublish("coffee-abcd", "ours")).rejects.toThrow("Forbidden");
 });
 test("publish and unpublish cannot overlap, independent of sandbox lifetime", () => {

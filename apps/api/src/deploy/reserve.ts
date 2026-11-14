@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db, project } from "@repo/db";
 
-// Claim a Vercel project name for an Orin project BEFORE its first deploy. Saving the name only
+// Claim a Vercel project name for an Gustav project BEFORE its first deploy. Saving the name only
 // after a successful deploy (the first version) is check-then-insert: two projects that pick
 // the same slug and happen to share their 4 id characters would both pass, and the second would
 // deploy into the first one's Vercel project — replacing someone else's app. The unique
@@ -27,7 +27,7 @@ export async function reserveVercelProject(projectId: string, name: string): Pro
   return row?.name === name ? "reserved" : "taken";
 }
 
-// Undo a reservation that can't be used (the name exists on Vercel outside Orin). Conditional,
+// Undo a reservation that can't be used (the name exists on Vercel outside Gustav). Conditional,
 // so it can never clear a name this project went on to deploy under.
 export async function releaseVercelProject(projectId: string, name: string): Promise<void> {
   await db

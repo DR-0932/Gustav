@@ -19,7 +19,7 @@ export class SourceTooLarge extends Error {
 // of the sandbox instead of one per file. HEAD is what the last snapshot saved, so a deploy
 // always matches a restorable rewind point.
 export async function exportSource(sandbox: SnapshotSandbox, maxBytes = SOURCE_MAX_BYTES): Promise<Source> {
-  const tarPath = `/tmp/orin-deploy-${crypto.randomUUID()}.tar`;
+  const tarPath = `/tmp/Gustav-deploy-${crypto.randomUUID()}.tar`;
   try {
     const res = await sandbox.commands.run(
       `git rev-parse HEAD && git archive --format=tar -o ${tarPath} HEAD && stat -c %s ${tarPath}`,

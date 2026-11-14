@@ -11,7 +11,7 @@ let a = "";
 let b = "";
 
 beforeAll(async () => {
-  await db.insert(user).values({ id: USER_ID, name: "reserve test", email: `${USER_ID}@orin.test` });
+  await db.insert(user).values({ id: USER_ID, name: "reserve test", email: `${USER_ID}@Gustav.test` });
   [{ id: a }, { id: b }] = await db.insert(project).values([{ userId: USER_ID, name: "A" }, { userId: USER_ID, name: "B" }]).returning({ id: project.id }) as [{ id: string }, { id: string }];
 });
 afterAll(async () => {

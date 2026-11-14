@@ -14,7 +14,7 @@ const LONG = `src/${"deeply-nested-folder/".repeat(6)}Component.tsx`; // > 100 c
 // The archive comes from real `git archive`, the same command the sandbox runs — a
 // hand-built tar would only test this parser against itself.
 async function gitArchive(): Promise<Uint8Array> {
-  const dir = await mkdtemp(join(tmpdir(), "orin-tar-"));
+  const dir = await mkdtemp(join(tmpdir(), "Gustav-tar-"));
   await $`git init -q ${dir}`;
   await Bun.write(join(dir, "index.html"), "<div id=root></div>");
   await Bun.write(join(dir, "src/main.tsx"), "import App from './App'");
@@ -52,7 +52,7 @@ describe("exportSource", () => {
     const f = fakeSandbox(`${COMMIT}\n${30 * 1024 * 1024}\n`);
     await expect(exportSource(f.sandbox)).rejects.toBeInstanceOf(SourceTooLarge);
     expect(f.reads).toHaveLength(0);
-    expect(f.commands.at(-1)).toStartWith("rm -f /tmp/orin-deploy-");
+    expect(f.commands.at(-1)).toStartWith("rm -f /tmp/Gustav-deploy-");
   });
 
   test("unreadable output fails loudly instead of deploying nothing", async () => {
@@ -76,14 +76,14 @@ function fakeVercel(states: string[], opts: { failCreate?: boolean; aliasWarmup?
     if (url.pathname === "/v13/deployments") {
       return opts.failCreate
         ? json(403, { error: { code: "forbidden", message: "Not authorized" } })
-        : json(200, { id: "dpl_1", url: "orin-x-abc.vercel.app", readyState: "QUEUED" });
+        : json(200, { id: "dpl_1", url: "Gustav-x-abc.vercel.app", readyState: "QUEUED" });
     }
     if (url.pathname === "/v13/deployments/dpl_1") {
       const readyState = states[Math.min(polls++, states.length - 1)];
-      return json(200, { id: "dpl_1", url: "orin-x-abc.vercel.app", readyState, alias: ["orin-x-team.vercel.app", "orin-x.vercel.app"], errorMessage: readyState === "ERROR" ? "Command \"bun run build\" exited with 1" : undefined });
+      return json(200, { id: "dpl_1", url: "Gustav-x-abc.vercel.app", readyState, alias: ["Gustav-x-team.vercel.app", "Gustav-x.vercel.app"], errorMessage: readyState === "ERROR" ? "Command \"bun run build\" exited with 1" : undefined });
     }
     if (url.pathname.startsWith("/v9/projects/")) return url.pathname.endsWith("/portfolio-1a2b") ? json(200, { name: "portfolio-1a2b" }) : json(404, { error: { code: "not_found", message: "Project not found" } });
-    if (url.host === "orin-x.vercel.app") return new Response("", { status: aliasPolls++ < opts.aliasWarmup! ? 404 : 200 });
+    if (url.host === "Gustav-x.vercel.app") return new Response("", { status: aliasPolls++ < opts.aliasWarmup! ? 404 : 200 });
     if (url.pathname === "/v3/deployments/dpl_1/events") return json(200, [{ text: "src/App.tsx(3,1): error TS1005" }, { text: "exited with 1" }]);
     return json(404, {});
   }) as unknown as typeof fetch;
@@ -95,7 +95,7 @@ describe("VercelClient", () => {
   test("uploads each file by sha1 to the team, then deploys to production with auto-detection", async () => {
     const { client, calls } = fakeVercel(["READY"]);
     const refs = await client.uploadFiles([{ path: "index.html", bytes: new TextEncoder().encode("hi") }]);
-    await client.createDeployment("orin-x", refs);
+    await client.createDeployment("Gustav-x", refs);
 
     const upload = calls[0]!;
     expect(upload.url.searchParams.get("teamId")).toBe("team_1");
@@ -105,7 +105,7 @@ describe("VercelClient", () => {
 
     const create = calls[1]!;
     expect(create.url.searchParams.get("skipAutoDetectionConfirmation")).toBe("1");
-    expect(create.body).toMatchObject({ name: "orin-x", target: "production", files: refs });
+    expect(create.body).toMatchObject({ name: "Gustav-x", target: "production", files: refs });
     expect(create.body).not.toHaveProperty("projectSettings"); // framework is detected, not assumed
   });
 
@@ -117,8 +117,8 @@ describe("VercelClient", () => {
 
   test("waits out the alias's 404 after READY before calling the link live", async () => {
     const { client, calls } = fakeVercel(["READY"], { aliasWarmup: 2 });
-    expect(await client.waitServing("https://orin-x.vercel.app")).toBe(true);
-    const visits = calls.filter((c) => c.url.host === "orin-x.vercel.app");
+    expect(await client.waitServing("https://Gustav-x.vercel.app")).toBe(true);
+    const visits = calls.filter((c) => c.url.host === "Gustav-x.vercel.app");
     expect(visits).toHaveLength(3);
     expect(visits[0]!.headers.Authorization).toBeUndefined(); // checked as a visitor would see it
   });
@@ -145,7 +145,7 @@ describe("VercelClient", () => {
 
   test("an API error carries Vercel's code and message", async () => {
     const { client } = fakeVercel(["READY"], { failCreate: true });
-    const err = await client.createDeployment("orin-x", []).catch((e) => e);
+    const err = await client.createDeployment("Gustav-x", []).catch((e) => e);
     expect(err).toBeInstanceOf(VercelError);
     expect(err).toMatchObject({ status: 403, code: "forbidden", message: "Not authorized" });
   });
@@ -182,9 +182,9 @@ describe("naming and URLs", () => {
   });
 
   test("the shared URL is the project's shortest vercel.app alias", () => {
-    expect(publicUrl({ url: "orin-x-abc.vercel.app", alias: ["orin-x-team.vercel.app", "orin-x.vercel.app"] })).toBe("https://orin-x.vercel.app");
-    expect(publicUrl({ url: "orin-x-abc.vercel.app" }, "orin-x")).toBe("https://orin-x.vercel.app");
-    expect(publicUrl({ url: "orin-x-abc.vercel.app" })).toBe("https://orin-x-abc.vercel.app");
+    expect(publicUrl({ url: "Gustav-x-abc.vercel.app", alias: ["Gustav-x-team.vercel.app", "Gustav-x.vercel.app"] })).toBe("https://Gustav-x.vercel.app");
+    expect(publicUrl({ url: "Gustav-x-abc.vercel.app" }, "Gustav-x")).toBe("https://Gustav-x.vercel.app");
+    expect(publicUrl({ url: "Gustav-x-abc.vercel.app" })).toBe("https://Gustav-x-abc.vercel.app");
   });
 });
 
@@ -195,7 +195,7 @@ describe("deployProject", () => {
     const saved: unknown[] = [];
     const s: DeploySeams = {
       projectId: "1a2b3c4d-0000-0000-0000-000000000000",
-      vercelProject: "orin-x",
+      vercelProject: "Gustav-x",
       exportSource: async () => {
         if (exportFails) throw exportFails;
         return { commit: COMMIT, files: [{ path: "index.html", bytes: new Uint8Array([1]) }] };
@@ -210,7 +210,7 @@ describe("deployProject", () => {
   test("a successful build is saved and reported with its URL", async () => {
     const { s, events, saved } = seams(["BUILDING", "READY"]);
     const r = await deployProject(s);
-    expect(r).toEqual({ url: "https://orin-x.vercel.app", commit: COMMIT, deploymentId: "dpl_1", vercelProject: "orin-x" });
+    expect(r).toEqual({ url: "https://Gustav-x.vercel.app", commit: COMMIT, deploymentId: "dpl_1", vercelProject: "Gustav-x" });
     expect(saved).toEqual([r]);
     expect(events.map((e) => e.event)).toEqual(["deploy_started", "deploy_building", "deploy_ready"]);
   });

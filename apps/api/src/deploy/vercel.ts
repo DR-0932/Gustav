@@ -16,7 +16,7 @@ export type VercelConfig = {
 export type FileRef = { file: string; sha: string; size: number };
 export type Deployment = {
   id: string;
-  url: string; // without scheme, e.g. orin-1a2b3c4d-abc123.vercel.app
+  url: string; // without scheme, e.g. Gustav-1a2b3c4d-abc123.vercel.app
   readyState: string; // QUEUED | INITIALIZING | BUILDING | READY | ERROR | CANCELED
   alias?: string[];
   errorMessage?: string;
@@ -105,7 +105,7 @@ export class VercelClient {
   }
 
   // Whether the team already has a project by this name. Checked before an app's first deploy:
-  // the team also holds things that aren't Orin apps (the Orin web app itself, a portfolio), and
+  // the team also holds things that aren't Gustav apps (the Gustav web app itself, a portfolio), and
   // deploying to an existing name would replace whatever is there.
   async projectExists(name: string): Promise<boolean> {
     try {
@@ -117,9 +117,9 @@ export class VercelClient {
     }
   }
 
-  // Resolve the stored name to an immutable ID and verify Orin's deployment
+  // Resolve the stored name to an immutable ID and verify Gustav's deployment
   // metadata before deleting. Never accept a remote project name from the caller.
-  async unpublish(name: string, orinProjectId: string): Promise<void> {
+  async unpublish(name: string, GustavProjectId: string): Promise<void> {
     let remote: { id: string };
     try {
       remote = await this.call("GET", `/v9/projects/${encodeURIComponent(name)}`);
@@ -129,7 +129,7 @@ export class VercelClient {
     }
     const history = await this.call<{ deployments: { meta?: Record<string, string> }[] }>(
       "GET", "/v6/deployments", { query: { projectId: remote.id, limit: "1" } });
-    if (history.deployments[0]?.meta?.orinProjectId !== orinProjectId) {
+    if (history.deployments[0]?.meta?.GustavProjectId !== GustavProjectId) {
       throw new Error("Deployment ownership could not be verified. Nothing was deleted.");
     }
     try {
