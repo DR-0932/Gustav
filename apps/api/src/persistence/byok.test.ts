@@ -30,7 +30,7 @@ describe("BYOK key store", () => {
 
   test("the key is not written to the database", async () => {
     setKey(USER, { provider: "deepseek", apiKey: SECRET });
-    await db.insert(user).values({ id: USER, name: "byok test", email: `${USER}@orin.test` });
+    await db.insert(user).values({ id: USER, name: "byok test", email: `${USER}@Gustav.test` });
     await db.insert(accountAccess).values({ userId: USER, tier: "byok", stepsLimit: 60 });
     const [p] = await db.insert(project).values({ userId: USER, name: "byok test" }).returning();
     await db.insert(message).values({ projectId: p.id, seq: 0, role: "user", content: "build a todo app" });

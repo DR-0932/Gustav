@@ -2,7 +2,7 @@ import { S3Client } from "bun";
 
 // R2 is S3-compatible, so Bun's built-in S3Client talks to it with no extra deps
 // (matches the Bun.redis / Bun.sql conventions in apps/api/CLAUDE.md). Credentials
-// come from apps/api/.env; a new Orin-only token/bucket, isolated from other projects.
+// come from apps/api/.env; a new Gustav-only token/bucket, isolated from other projects.
 function env(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`env ${name} not set (needed for R2 snapshots)`);

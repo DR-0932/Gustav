@@ -18,7 +18,7 @@ const used = async () =>
 beforeEach(async () => {
   await db
     .insert(user)
-    .values({ id: USER_ID, name: "access test", email: `${USER_ID}@orin.test` })
+    .values({ id: USER_ID, name: "access test", email: `${USER_ID}@Gustav.test` })
     .onConflictDoNothing();
 });
 afterAll(async () => {
@@ -109,7 +109,7 @@ describe("getAccessView", () => {
 });
 
 describe("accessForNewUser (what a brand-new account gets)", () => {
-  const LISTED = `listed-${crypto.randomUUID()}@orin.test`;
+  const LISTED = `listed-${crypto.randomUUID()}@Gustav.test`;
 
   test("an allowlisted email → unlimited, never expires", async () => {
     await db.insert(allowlist).values({ email: LISTED }).onConflictDoNothing();

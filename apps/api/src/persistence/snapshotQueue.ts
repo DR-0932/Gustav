@@ -14,7 +14,7 @@ import type { SnapshotJob } from "../agent/agent";
 // discards its round). Single shared stream + single consumer here (per-project order is
 // preserved as a subset); sharding by projectId comes with multi-worker scale.
 
-const STREAM = "orin:snapshots";
+const STREAM = "Gustav:snapshots";
 const URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 
 // Bundle bytes indexed by job id — kept out of Redis, handed to the worker in-process.
