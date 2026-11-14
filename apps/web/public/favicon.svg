@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
+  <!-- The Gustav mark: a circle split by one stroke (same shape as GustavMark in
+       components/brand.tsx). Clay #C2552D — the light theme's accent, which stays legible
+       against both light and dark browser chrome; a favicon can't follow the theme. -->
+  <g fill="none" stroke="#C2552D" stroke-width="1.8" stroke-linecap="round">
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 3.5v17" />
+  </g>
+</svg>
