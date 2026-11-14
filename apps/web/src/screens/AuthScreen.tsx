@@ -1,0 +1,115 @@
+import { useEffect, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
+import { authClient } from '@/authClient'
+import { API, authed } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { GithubMark, Wordmark } from '@/components/brand'
+
+// One way in for everyone (7b): GitHub for visitors, and a quiet email link for the few
+// people invited by address. There's no sign-up form — email accounts are created only
+// through a one-time invite link, so knowing an invited address isn't enough.
+export function AuthScreen() {
+  const [github, setGithub] = useState(false)
+  const [trial, setTrial] = useState<{ days: number; steps: number } | null>(null)
+  const [showEmail, setShowEmail] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [reveal, setReveal] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API}/config`, authed)
+      .then((res) => res.json())
+      .then((c: { github?: boolean; trial?: { days: number; steps: number } }) => { setGithub(!!c.github); setTrial(c.trial ?? null) })
+      .catch(() => {})
+  }, [])
+
+  async function signInEmail(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true); setError(null)
+    const res = await authClient.signIn.email({ email: email.trim().toLowerCase(), password })
+    setBusy(false)
+    if (res.error) {
+      // Better Auth answers an unknown email and a wrong password identically, on purpose — it
+      // won't confirm which addresses exist. So the message covers both, and points at the only
+      // way an email account can come to exist.
+      setError("That email and password didn't match. Email accounts are invite-only — use the link you were sent, or continue with GitHub.")
+    }
+  }
+
+  return (
+    <div className="relative grid min-h-dvh place-items-center bg-background px-6">
+      <div className="absolute top-5 right-6"><ThemeToggle /></div>
+      <div className="w-full max-w-sm">
+        <div className="text-center">
+          <h1 className="sr-only">Sign in to Gustav</h1>
+          <Wordmark className="justify-center" />
+          <p className="mt-4 text-balance text-[15px] text-muted-foreground">
+            Describe an app. Watch it get built.
+          </p>
+        </div>
+
+        {github && (
+          <Button
+            className="mt-9 w-full rounded-xl"
+            size="lg"
+            onClick={() => authClient.signIn.social({ provider: 'github', callbackURL: window.location.origin })}
+          >
+            <GithubMark /> Continue with GitHub
+          </Button>
+        )}
+        {github && (
+          <p className="mt-3 text-center text-[13px] text-muted-foreground">
+            New here? Sign in with GitHub and bring your own API key.
+            {trial && ` Your trial includes ${trial.steps} build steps over ${trial.days} days. Project data is cleaned up seven days after expiry; your account is retained.`}
+          </p>
+        )}
+
+        {!showEmail ? (
+          <button
+            onClick={() => setShowEmail(true)}
+            className="mt-6 w-full rounded-sm text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Invited by email? Sign in →
+          </button>
+        ) : (
+          <form onSubmit={signInEmail} className={github ? 'mt-8 space-y-4 border-t pt-8' : 'mt-9 space-y-4'}>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Password</Label>
+              <InputGroup>
+                <InputGroupInput
+                  id="password"
+                  type={reveal ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton size="icon-xs" onClick={() => setReveal((r) => !r)} aria-label={reveal ? 'Hide password' : 'Show password'}>
+                    {reveal ? <EyeOff /> : <Eye />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" className="w-full rounded-xl" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </Button>
+            <p className="text-center text-[13px] text-muted-foreground">
+              Forgotten your password? Ask for a new link.
+            </p>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
