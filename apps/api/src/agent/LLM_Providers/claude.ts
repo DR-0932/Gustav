@@ -7,7 +7,7 @@ import type { ContextType, LLMResponseType, ToolCall, ToolDefinition, UsageType 
 // reasoning comes back as `thinking` blocks that must be echoed back verbatim on the turn
 // after a tool call (same rule DeepSeek has for `reasoning_content`).
 //
-// Orin's context carries one string for reasoning, so the thinking blocks are stored in it
+// Gustav's context carries one string for reasoning, so the thinking blocks are stored in it
 // as JSON and rebuilt here. That keeps the provider's shapes inside the provider — the agent
 // loop only ever sees LLMResponseType.
 
@@ -91,7 +91,7 @@ export class ClaudeProvider {
   }
 }
 
-// Orin's context → a top-level system prompt plus Messages-API turns.
+// Gustav's context → a top-level system prompt plus Messages-API turns.
 export function translateMessages(context: ContextType): { system?: string; messages: Anthropic.MessageParam[] } {
   let system: string | undefined;
   const messages: Anthropic.MessageParam[] = [];

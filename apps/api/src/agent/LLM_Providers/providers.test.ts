@@ -8,7 +8,7 @@ import type { ContextType } from "../types";
 // A round with every message shape the loop produces: system, user, an assistant turn that
 // called a tool (with a reasoning trace), and the tool's result.
 const CONTEXT: ContextType = [
-  { role: "system", content: "You are Orin." },
+  { role: "system", content: "You are Gustav." },
   { role: "user", content: "build a todo app" },
   {
     role: "assistant",
@@ -45,7 +45,7 @@ describe("OpenAI-compatible translation", () => {
 describe("Claude translation", () => {
   test("system prompt is lifted out of the turns", () => {
     const { system, messages } = toClaudeMessages(CONTEXT);
-    expect(system).toBe("You are Orin.");
+    expect(system).toBe("You are Gustav.");
     expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]); // tool results ride in a user turn
   });
 

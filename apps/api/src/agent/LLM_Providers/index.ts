@@ -19,7 +19,7 @@ export const PROVIDERS = {
     baseURL: "https://api.deepseek.com",
     defaultModel: "deepseek-flash",
     models: [
-      { id: "deepseek-flash", label: "V4.1 Flash — fast, what Orin builds with" },
+      { id: "deepseek-flash", label: "V4.1 Flash — fast, what Gustav builds with" },
       { id: "deepseek-v4-pro", label: "v4 Pro — slower, more reasoning" },
     ] as ModelChoice[],
     envKey: "DEEPSEEK_API_KEY",
@@ -29,7 +29,7 @@ export const PROVIDERS = {
   openai: {
     label: "OpenAI",
     baseURL: "https://api.openai.com/v1",
-    defaultModel: null, // no guessed default: set ORIN_MODEL / pick one in the BYOK form
+    defaultModel: null, // no guessed default: set Gustav_MODEL / pick one in the BYOK form
     models: [] as ModelChoice[], // ids move faster than this file — type one in
     envKey: "OPENAI_API_KEY",
     echoReasoning: false,
@@ -82,12 +82,12 @@ export function createProvider({ provider, apiKey, model, effort }: ProviderChoi
   });
 }
 
-// The provider a server-keyed session uses: `ORIN_PROVIDER` if set, else DeepSeek, with the
+// The provider a server-keyed session uses: `Gustav_PROVIDER` if set, else DeepSeek, with the
 // key from that provider's env var. Throws loudly at startup rather than mid-build.
 export function serverProvider(effort: EffortType = "low"): LLMProvider {
-  const id = process.env.ORIN_PROVIDER ?? "deepseek";
-  if (!isProviderId(id)) throw new Error(`ORIN_PROVIDER must be one of ${PROVIDER_IDS.join(", ")} (got ${id})`);
+  const id = process.env.Gustav_PROVIDER ?? "deepseek";
+  if (!isProviderId(id)) throw new Error(`Gustav_PROVIDER must be one of ${PROVIDER_IDS.join(", ")} (got ${id})`);
   const apiKey = process.env[PROVIDERS[id].envKey];
   if (!apiKey) throw new Error(`${PROVIDERS[id].envKey} is not set (needed for the ${PROVIDERS[id].label} provider)`);
-  return createProvider({ provider: id, apiKey, model: process.env.ORIN_MODEL, effort });
+  return createProvider({ provider: id, apiKey, model: process.env.Gustav_MODEL, effort });
 }

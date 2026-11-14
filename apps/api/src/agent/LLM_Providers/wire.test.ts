@@ -7,7 +7,7 @@ import type { ContextType } from "../types";
 // What actually goes on the wire, and what comes back — with a stubbed transport, so no
 // network and no keys. Mirrors the two protocols: Chat Completions and Messages.
 const CONTEXT: ContextType = [
-  { role: "system", content: "You are Orin." },
+  { role: "system", content: "You are Gustav." },
   { role: "user", content: "list the files" },
 ];
 
@@ -88,7 +88,7 @@ describe("Claude adapter", () => {
     await new ClaudeProvider({ apiKey: "k", model: "claude-opus-5", effort: "high", fetch: fetchStub }).callLLM(CONTEXT, tools);
 
     expect(calls[0].url).toContain("/v1/messages");
-    expect(calls[0].body).toMatchObject({ model: "claude-opus-5", system: "You are Orin.", output_config: { effort: "high" } });
+    expect(calls[0].body).toMatchObject({ model: "claude-opus-5", system: "You are Gustav.", output_config: { effort: "high" } });
     expect(calls[0].body.messages).toEqual([{ role: "user", content: "list the files" }]); // system is not a turn
     expect(calls[0].body.tools[0]).toMatchObject({ name: "bash_tool", strict: true });
     expect(calls[0].body.tools[0].input_schema.type).toBe("object");
