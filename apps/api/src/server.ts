@@ -307,7 +307,7 @@ export const app = new Elysia()
     { body: t.Object({ snapshotId: t.String() }) },
   )
   // Deploy the project's app to Vercel (spec 12). Allowlist only for now: an unclaimed app
-  // lives on Orin's own Vercel account, so a guest's build would be hosted under its name.
+  // lives on Gustav's own Vercel account, so a guest's build would be hosted under its name.
   // Needs the open builder (the source is read from the live sandbox) and no turn mid-way
   // (HEAD is only a finished round between turns). Answers at once — the build takes
   // 30–60s, and its progress and outcome arrive as deploy_* events on the stream.
@@ -362,7 +362,7 @@ export const app = new Elysia()
       live.deploying = true; // set before any await, so a double click can't start two
 
       // First deploy: claim the name in Postgres (atomic, see reserve.ts), then make sure the
-      // Vercel team doesn't already have a project by it that isn't an Orin app.
+      // Vercel team doesn't already have a project by it that isn't an Gustav app.
       let vercelProject = proj.vercelProject;
       if (!vercelProject) {
         const name = vercelProjectName(proj.id, slug!);

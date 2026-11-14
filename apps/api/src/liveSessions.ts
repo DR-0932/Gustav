@@ -15,7 +15,7 @@ import type { AgentEvent, AgentSession } from "./agent/agent";
 
 // How long a session outlives its last viewer. Overridable so tests needn't wait a minute;
 // read per use so a test can set it after import.
-const graceMs = () => Number(process.env.ORIN_GRACE_MS ?? 60_000);
+const graceMs = () => Number(process.env.Gustav_GRACE_MS ?? 60_000);
 const BUFFER_MAX = 2_000;
 const RUN_ENDS = new Set(["final", "error", "exception", "max_iterations_reached", "budget_exhausted", "budget_error"]);
 
@@ -179,7 +179,7 @@ export function closeOtherLives(userId: string, keepProjectId: string): number {
 // Sandboxes are the real cost of a free trial, so limited accounts share a global ceiling
 // (7f): one busy afternoon on the portfolio can't spin up unbounded E2B VMs. Allowlist
 // accounts are not counted and never blocked.
-export const GUEST_SANDBOX_CAP = Number(process.env.ORIN_MAX_GUEST_SANDBOXES ?? 3);
+export const GUEST_SANDBOX_CAP = Number(process.env.Gustav_MAX_GUEST_SANDBOXES ?? 3);
 
 export function liveGuestCount(): number {
   let n = 0;

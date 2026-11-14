@@ -55,7 +55,7 @@ describe("grace period waits for the running turn", () => {
   const event = (name: string) => emit({ ts: new Date().toISOString(), sessionId: "", event: name } as AgentEvent);
 
   async function openWatched(projectId: string) {
-    process.env.ORIN_GRACE_MS = String(GRACE);
+    process.env.Gustav_GRACE_MS = String(GRACE);
     opened.push(projectId);
     const live = startLive(projectId, "owner", false, async (onEvent) => {
       emit = onEvent;
@@ -66,7 +66,7 @@ describe("grace period waits for the running turn", () => {
     return live;
   }
 
-  afterEach(() => { delete process.env.ORIN_GRACE_MS; });
+  afterEach(() => { delete process.env.Gustav_GRACE_MS; });
 
   test("a viewer leaving mid-turn doesn't close the session until the turn ends", async () => {
     const live = await openWatched("grace-mid-turn");
