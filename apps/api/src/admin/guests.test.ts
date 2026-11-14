@@ -8,7 +8,7 @@ const userIdOf = async (id: string) =>
   (await db.select({ userId: guestLink.userId }).from(guestLink).where(eq(guestLink.id, id)))[0].userId;
 
 afterEach(async () => {
-  await db.delete(user).where(like(user.email, "guest-%@guests.orin.invalid")); // cascades link + access
+  await db.delete(user).where(like(user.email, "guest-%@guests.Gustav.invalid")); // cascades link + access
 });
 
 describe("guest links", () => {

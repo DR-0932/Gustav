@@ -30,7 +30,7 @@ export async function createGuestLink(
   const ctx = await auth.$context;
 
   const created = await ctx.internalAdapter.createUser(
-    { email: `guest-${crypto.randomUUID()}@guests.orin.invalid`, name: opts.label?.trim() || "Guest", emailVerified: true },
+    { email: `guest-${crypto.randomUUID()}@guests.Gustav.invalid`, name: opts.label?.trim() || "Guest", emailVerified: true },
     { method: "anonymous" },
   );
   // The create hook already inserted a default access row; a guest's differs (tier + expiry

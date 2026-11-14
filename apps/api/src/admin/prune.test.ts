@@ -11,7 +11,7 @@ const ids: string[] = [];
 async function makeAccount(opts: { tier: AccessTier; expiresAt: Date | null; withBundle?: boolean }) {
   const id = `test-prune-${crypto.randomUUID()}`;
   ids.push(id);
-  await db.insert(user).values({ id, name: "prune test", email: `${id}@orin.test` });
+  await db.insert(user).values({ id, name: "prune test", email: `${id}@Gustav.test` });
   await db.insert(accountAccess).values({ userId: id, tier: opts.tier, stepsLimit: 60, expiresAt: opts.expiresAt });
   const [p] = await db.insert(project).values({ userId: id, name: "prune test" }).returning();
   if (opts.withBundle) await r2.write(snapshotKey("guests", id, p.id, "a".repeat(40)), new Uint8Array([1, 2, 3]));
@@ -21,11 +21,11 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
 
 afterEach(async () => {
   for (const id of ids.splice(0)) {
-    await db.delete(allowlist).where(eq(allowlist.email, `${id}@orin.test`));
+    await db.delete(allowlist).where(eq(allowlist.email, `${id}@Gustav.test`));
     for (const o of (await r2.list({ prefix: `guests/${id}/` })).contents ?? []) await r2.delete(o.key);
     await db.delete(user).where(eq(user.id, id));
   }
-  await db.delete(user).where(like(user.email, "test-prune-%@orin.test"));
+  await db.delete(user).where(like(user.email, "test-prune-%@Gustav.test"));
 });
 
 describe("prune-guests", () => {
@@ -111,9 +111,9 @@ describe('scheduled cleanup safety and retries', () => {
     expect(candidates[0]?.deployments).toBe(1);
     f.calls.length = 0;
     const result = await prune(candidates, { storage: f.storage, vercel: {
-      unpublish: async (name, orinProjectId) => {
+      unpublish: async (name, GustavProjectId) => {
         expect(name).toBe(`app-${projectId}`);
-        expect(orinProjectId).toBe(projectId);
+        expect(GustavProjectId).toBe(projectId);
         expect(await rowExists(id)).toBe(true);
         f.calls.push('unpublish');
       },
@@ -205,7 +205,7 @@ describe('scheduled cleanup safety and retries', () => {
       if (change === 'renewed') await db.update(accountAccess).set({ expiresAt: daysAgo(-1) }).where(eq(accountAccess.userId, id));
       if (change === 'promoted') await db.update(accountAccess).set({ tier: 'allowlist' }).where(eq(accountAccess.userId, id));
       if (change === 'unlimited') await db.update(accountAccess).set({ stepsLimit: null }).where(eq(accountAccess.userId, id));
-      if (change === 'allowlisted') await db.insert(allowlist).values({ email: `${id}@orin.test` });
+      if (change === 'allowlisted') await db.insert(allowlist).values({ email: `${id}@Gustav.test` });
       const result = await prune(candidates, { storage: f.storage, vercel: null });
       expect(result.skipped).toHaveLength(1);
       expect(result.failed).toEqual([]);

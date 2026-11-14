@@ -11,7 +11,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
 async function fixture(values: Partial<typeof accountAccess.$inferInsert> = {}) {
   const id = `test-extension-${crypto.randomUUID()}`;
   ids.push(id);
-  await db.insert(user).values({ id, name: 'trial extension test', email: `${id}@orin.test` });
+  await db.insert(user).values({ id, name: 'trial extension test', email: `${id}@Gustav.test` });
   await db.insert(accountAccess).values({ userId: id, tier: 'byok', stepsLimit: 60, stepsUsed: 60, expiresAt: daysAgo(1), ...values });
   return id;
 }

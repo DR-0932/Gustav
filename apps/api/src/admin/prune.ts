@@ -133,7 +133,7 @@ export async function prune(candidates: PruneCandidate[], opts: PruneOptions = {
         for (const p of projects) {
           if (!p.vercelProject) continue;
           if (!vercel) throw new Error("Vercel cleanup is unconfigured; account and files kept");
-          // Resolves an immutable ID, checks Orin ownership metadata, and accepts
+          // Resolves an immutable ID, checks Gustav ownership metadata, and accepts
           // remote 404s. A retry after a partial cleanup can safely repeat this.
           await vercel.unpublish(p.vercelProject, p.id);
         }

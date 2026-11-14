@@ -4,8 +4,8 @@ import { accountAccess, allowlist, db, user } from "@repo/db";
 
 // ADMIN_EMAILS is read when the module loads, so it's set before anything is imported: the
 // whole point of these tests is that the gate is server-side, on every route.
-const ADMIN = "admin-test@orin.test";
-const PLAIN = "plain-test@orin.test";
+const ADMIN = "admin-test@Gustav.test";
+const PLAIN = "plain-test@Gustav.test";
 process.env.ADMIN_EMAILS = ADMIN;
 
 const { auth } = await import("../auth");
@@ -29,7 +29,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(user).where(inArray(user.email, [ADMIN, PLAIN]));
-  await db.delete(user).where(like(user.email, "guest-%@guests.orin.invalid"));
+  await db.delete(user).where(like(user.email, "guest-%@guests.Gustav.invalid"));
   await db.delete(allowlist).where(inArray(allowlist.email, [ADMIN, PLAIN]));
 });
 

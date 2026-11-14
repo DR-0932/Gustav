@@ -6,7 +6,7 @@ import { acceptInvite, createInviteLink, peekInvite } from "./invites";
 
 // Local Postgres + the real Better Auth context: the point of these tests is that an
 // account created this way can actually sign in, which a fake would not prove.
-const EMAIL = "invite-test@orin.test";
+const EMAIL = "invite-test@Gustav.test";
 const PASSWORD = "check-password-123";
 const tokenOf = (url: string) => url.split("/invite/")[1];
 const signIn = (password: string) =>
@@ -69,7 +69,7 @@ describe("invite links", () => {
   });
 
   test("reset link for an unknown account is refused", async () => {
-    expect(createInviteLink("nobody@orin.test", "reset")).rejects.toThrow("no account");
+    expect(createInviteLink("nobody@Gustav.test", "reset")).rejects.toThrow("no account");
   });
 
   test("open email sign-up stays disabled", async () => {
