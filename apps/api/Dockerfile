@@ -1,4 +1,4 @@
-# Orin API (spec 8). Same shape as the perps images: one Bun image, the whole workspace
+# Gustav API (spec 8). Same shape as the perps images: one Bun image, the whole workspace
 # copied in, `bun install` once. The API imports @repo/db from the workspace, so a per-app
 # copy would need the packages anyway.
 FROM oven/bun:1
