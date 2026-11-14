@@ -9,18 +9,18 @@ import { connectHmr, moduleUrlPath, type HmrListener } from "./hmrListener";
 import type { RestorePoint } from "../persistence/store";
 import { exportSource } from "../deploy/source";
 
-const TEMPLATE = "orin-react-workspace-dev";
+const TEMPLATE = "Gustav-react-workspace-dev";
 // Metadata stamped on every sandbox this API creates, so a freshly booted server can find
 // (and kill) the ones a crashed predecessor left running — see sandbox/sweep.ts.
-export const SANDBOX_TAG = { app: "orin-api" };
+export const SANDBOX_TAG = { app: "Gustav-api" };
 
 // Anchors the agent to the actual workspace: it must EDIT the live Vite React app
 // (what the preview serves), not freelance a standalone file. Without this the
 // model tends to write e.g. a self-contained todo.html that never shows up in the
 // preview (which serves index.html → src/main.tsx → src/App.tsx via `bun run dev`).
-const SYSTEM_PROMPT = `You are Orin, an expert web app builder.
+const SYSTEM_PROMPT = `You are Gustav, an expert web app builder.
 
-You work inside a Bun + Vite + React + TypeScript app at /home/user/react-template. Every bash command already runs in that directory — do NOT prefix commands with \`cd /home/user/react-template &&\`; just use paths relative to it, e.g. \`cat src/App.tsx\`. It uses Bun as the package manager and its dependencies are already installed — use \`bun add <pkg>\` / \`bunx\`, never npm/yarn/pnpm. Orin runs this app and shows it to the user in a live preview that hot-reloads as you edit — you do NOT need to start, run, or verify a dev server yourself; just edit the app's files and the preview updates.
+You work inside a Bun + Vite + React + TypeScript app at /home/user/react-template. Every bash command already runs in that directory — do NOT prefix commands with \`cd /home/user/react-template &&\`; just use paths relative to it, e.g. \`cat src/App.tsx\`. It uses Bun as the package manager and its dependencies are already installed — use \`bun add <pkg>\` / \`bunx\`, never npm/yarn/pnpm. Gustav runs this app and shows it to the user in a live preview that hot-reloads as you edit — you do NOT need to start, run, or verify a dev server yourself; just edit the app's files and the preview updates.
 
 Your job: build what the user asks by modifying this app. The whole project is yours — edit or create any files (components and modules under src/, styles, index.html, config) and install dependencies with \`bun add <pkg>\` whenever you need them. The app's entry chain is index.html → src/main.tsx → src/App.tsx.
 
@@ -325,7 +325,7 @@ export class AgentSession {
       case "exited":
         // The stderr rides along for the pod logs and /admin, but the web feed deliberately
         // does NOT render it (lib/events.ts): the agent is about to be handed it to fix, and a
-        // stack trace shown to someone watching a demo makes Orin look broken, not the app.
+        // stack trace shown to someone watching a demo makes Gustav look broken, not the app.
         this.log("preview_server_exited", {
           port, url: outcome.url, exitCode: outcome.exitCode, stderr: outcome.stderr, ms: outcome.ms,
         });

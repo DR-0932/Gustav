@@ -50,5 +50,5 @@ export async function snapshotRound(sandbox: SnapshotSandbox, maxBytes = SNAPSHO
 // round is silently unsaved.
 export function oversizeNote(bytes: number, maxBytes = SNAPSHOT_MAX_BYTES): string {
   const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `[orin] The workspace snapshot is ${mb(bytes)}, over the ${mb(maxBytes)} limit, so this work is NOT being saved. Remove large files (build output, binaries, big assets) or add them to .gitignore.`;
+  return `[Gustav] The workspace snapshot is ${mb(bytes)}, over the ${mb(maxBytes)} limit, so this work is NOT being saved. Remove large files (build output, binaries, big assets) or add them to .gitignore.`;
 }
